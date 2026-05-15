@@ -101,7 +101,11 @@ function App() {
     setChats(prev => prev.map(c => c.id === currentChatId ? updatedChat : c));
 
     try {
-      const response = await fetch('http://localhost:3001/api/chat', {
+      const apiUrl = import.meta.env.VITE_API_URL 
+        ? `${import.meta.env.VITE_API_URL}/api/chat` 
+        : 'http://localhost:3001/api/chat';
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
