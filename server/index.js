@@ -65,7 +65,12 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-// Start the server
-app.listen(port, () => {
-  console.log(`Hota.chat Backend running on http://localhost:${port}`);
-});
+// Export the app for Vercel Serverless Functions
+module.exports = app;
+
+// Start the server locally (Vercel bypasses this)
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(port, () => {
+    console.log(`Hota.chat Backend running on http://localhost:${port}`);
+  });
+}
