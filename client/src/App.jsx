@@ -1,15 +1,32 @@
 import { useState, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Menu, Plus, MessageSquare, Trash2, Send, Sun, Moon, Bot, User, X } from 'lucide-react';
+import { 
+  Menu, Plus, MessageSquare, Trash2, Send, Sun, Moon, 
+  Bot, User, X, Paperclip, Loader2, GraduationCap, 
+  Sparkles, Calendar, Mail, HardDrive 
+} from 'lucide-react';
+
+import GoogleIntegrationPanel from './components/GoogleIntegrationPanel';
+import AcademicDashboard from './components/AcademicDashboard';
+import QuickActionCard from './components/QuickActionCard';
 
 function App() {
   const [chats, setChats] = useState([]);
   const [currentChatId, setCurrentChatId] = useState(null);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [theme, setTheme] = useState('dark');
+  const fileInputRef = useRef(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const messagesEndRef = useRef(null);
+
+  // Google integration states
+  const [googleIntegrations, setGoogleIntegrations] = useState({
+    calendar: false,
+    gmail: false,
+    drive: false
+  });
 
   // Load chats and theme from local storage on init
   useEffect(() => {
@@ -45,6 +62,27 @@ function App() {
     }
   }, [theme]);
 
+  // Check Google Integration Status from Backend
+  useEffect(() => {
+    const checkIntegrationStatus = async () => {
+      try {
+        const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+        const response = await fetch(`${baseUrl}/api/google/status`);
+        if (response.ok) {
+          const data = await response.json();
+          setGoogleIntegrations({
+            calendar: !!data.calendar,
+            gmail: !!data.gmail,
+            drive: !!data.drive
+          });
+        }
+      } catch (error) {
+        console.warn("Could not load Google integration status. Using default offline status.", error);
+      }
+    };
+    checkIntegrationStatus();
+  }, []);
+
   // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -79,11 +117,10 @@ function App() {
     setTheme(prev => prev === 'dark' ? 'light' : 'dark');
   };
 
-  const handleSendMessage = async () => {
-    if (!inputMessage.trim() || !currentChatId) return;
+  // Generalized message sender for normal typing & quick academic cards
+  const sendMessage = async (messageText) => {
+    if (!messageText.trim() || !currentChatId) return;
 
-    const messageText = inputMessage;
-    setInputMessage('');
     setIsLoading(true);
 
     // Create a new message object for the user
@@ -91,7 +128,8 @@ function App() {
 
     // Update current chat with user message
     let updatedChat = { ...currentChat };
-    updatedChat.messages = [...updatedChat.messages, newUserMessage];
+    const currentMessages = updatedChat.messages;
+    updatedChat.messages = [...currentMessages, newUserMessage];
     
     // Auto-generate title if it's the first message
     if (updatedChat.messages.length === 1) {
@@ -110,7 +148,7 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: messageText,
-          history: currentChat.messages // Send previous context
+          history: currentMessages // Send previous context
         })
       });
 
@@ -147,12 +185,77 @@ function App() {
     }
   };
 
+  const handleSendMessage = () => {
+    if (!inputMessage.trim()) return;
+    sendMessage(inputMessage);
+    setInputMessage('');
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const apiUrl = import.meta.env.VITE_API_URL 
+        ? `${import.meta.env.VITE_API_URL}/api/upload` 
+        : 'http://localhost:3001/api/upload';
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) throw new Error(data.error);
+
+      alert(`✅ Sucesso: ${data.message}`);
+    } catch (error) {
+      alert(`❌ Erro no upload: ${error.message}`);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
     }
   };
+
+  // Define 4 quick academic cards
+  const quickActions = [
+    {
+      title: "Atividades da semana",
+      description: "Veja minhas atividades da semana e organize minha agenda de estudos.",
+      prompt: "Veja minhas atividades da semana e organize minha agenda de estudos.",
+      icon: Calendar
+    },
+    {
+      title: "Avisos da faculdade",
+      description: "Resuma os avisos recentes da faculdade no meu Gmail.",
+      prompt: "Resuma os avisos recentes da faculdade no meu Gmail.",
+      icon: Mail
+    },
+    {
+      title: "Buscar no Drive",
+      description: "Busque materiais recentes no meu Google Drive relacionados às minhas matérias.",
+      prompt: "Busque materiais recentes no meu Google Drive relacionados às minhas matérias.",
+      icon: HardDrive
+    },
+    {
+      title: "Plano de estudos",
+      description: "Monte um plano de estudos com base nas minhas próximas atividades.",
+      prompt: "Monte um plano de estudos com base nas minhas próximas atividades.",
+      icon: Sparkles
+    }
+  ];
 
   return (
     <div className={`flex h-screen overflow-hidden ${theme === 'dark' ? 'bg-chat-dark text-white' : 'bg-chat-light text-gray-800'}`}>
@@ -170,6 +273,7 @@ function App() {
         <div className="p-4 flex items-center justify-between md:justify-center">
           <h1 className="text-xl font-bold tracking-wider flex items-center gap-2">
             <span className="text-primary">Hota</span>.chat
+            <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded font-mono uppercase tracking-normal">Edu</span>
           </h1>
           <button className="md:hidden p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700" onClick={() => setSidebarOpen(false)}>
             <X size={20} />
@@ -186,6 +290,7 @@ function App() {
           </button>
         </div>
 
+        {/* Recents List */}
         <div className="flex-1 overflow-y-auto px-3 py-2 scrollbar-hide space-y-1">
           <h2 className="text-xs font-semibold text-gray-500 mb-3 px-2 uppercase tracking-wider">Conversas Recentes</h2>
           {chats.map(chat => (
@@ -209,16 +314,37 @@ function App() {
           ))}
         </div>
 
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold">
-              U
+        {/* Integrações Section (Sidebar) */}
+        <div className="px-3 py-3 border-t border-gray-200 dark:border-gray-700/60">
+          <h2 className="text-xs font-semibold text-gray-500 mb-2 px-2 uppercase tracking-wider">Integrações</h2>
+          <GoogleIntegrationPanel integrations={googleIntegrations} theme={theme} />
+        </div>
+
+        {/* Sidebar Footer with Conectar Google */}
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700 flex flex-col gap-3">
+          <a 
+            href={import.meta.env.VITE_API_URL 
+              ? `${import.meta.env.VITE_API_URL}/api/google/auth` 
+              : 'http://localhost:3001/api/google/auth'}
+            className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl text-xs font-semibold bg-primary text-white hover:bg-primary/90 hover:scale-[1.01] active:scale-[0.99] transition-all shadow-sm"
+          >
+            <svg className="w-4 h-4 fill-current flex-shrink-0" viewBox="0 0 24 24">
+              <path d="M12.24 10.285V14.4h6.887c-.648 2.41-2.519 4.114-5.136 4.114-3.478 0-6.3-2.823-6.3-6.3 0-3.478 2.822-6.3 6.3-6.3 1.706 0 3.24.699 4.35 1.83l3.223-3.223C19.51 2.52 16.137 1 12.24 1 6.033 1 1 6.033 1 12.24s5.033 11.24 11.24 11.24c6.478 0 11.24-4.557 11.24-11.24 0-.799-.078-1.547-.24-2.285H12.24z"/>
+            </svg>
+            Conectar Google
+          </a>
+
+          <div className="flex items-center justify-between pt-1">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white font-bold text-sm">
+                U
+              </div>
+              <span className="text-sm font-medium">Usuário</span>
             </div>
-            <span className="text-sm font-medium">Usuário</span>
+            <button onClick={toggleTheme} className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 transition-colors">
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
           </div>
-          <button onClick={toggleTheme} className="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500">
-            {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-          </button>
         </div>
       </div>
 
@@ -239,12 +365,45 @@ function App() {
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 scrollbar-hide">
           {currentChat?.messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center opacity-50">
-              <div className="w-16 h-16 bg-primary/20 rounded-full flex items-center justify-center mb-4">
-                <Bot size={32} className="text-primary" />
+            <div className="py-8 px-4 w-full max-w-5xl mx-auto flex flex-col">
+              
+              {/* Academic Dashboard Header */}
+              <div className="flex flex-col items-center text-center mb-8">
+                <div className="w-12 h-12 bg-primary/10 rounded-2xl flex items-center justify-center mb-4 text-primary">
+                  <GraduationCap size={28} />
+                </div>
+                <h2 className={`text-2xl md:text-3xl font-extrabold tracking-tight ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                  Como posso te ajudar nos estudos hoje?
+                </h2>
+                <p className={`text-sm mt-2 max-w-lg ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                  Seu assistente acadêmico pessoal integrado com Google Calendar, Gmail e Google Drive.
+                </p>
               </div>
-              <h2 className="text-2xl font-bold mb-2">Como posso ajudar hoje?</h2>
-              <p className="max-w-md">Envie uma mensagem abaixo para começar a conversar com a inteligência artificial do Hota.chat.</p>
+
+              {/* Quick Academic Action Cards Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+                {quickActions.map((action, idx) => (
+                  <QuickActionCard 
+                    key={idx}
+                    title={action.title}
+                    description={action.description}
+                    icon={action.icon}
+                    onClick={() => sendMessage(action.prompt)}
+                    theme={theme}
+                  />
+                ))}
+              </div>
+
+              {/* Visão Geral Acadêmica / Google Dashboard */}
+              <div className="mt-10 border-t border-gray-200 dark:border-gray-700/60 pt-8">
+                <div className="flex items-center gap-2 mb-2">
+                  <GraduationCap className="text-primary" size={20} />
+                  <h3 className={`text-base font-bold tracking-tight ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`}>
+                    Visão Geral Acadêmica
+                  </h3>
+                </div>
+                <AcademicDashboard theme={theme} />
+              </div>
             </div>
           ) : (
             currentChat?.messages.map((msg, index) => (
@@ -277,8 +436,26 @@ function App() {
         {/* Input Area */}
         <div className="p-4 md:p-6 pb-6 md:pb-8 max-w-4xl w-full mx-auto">
           <div className={`relative flex items-end rounded-2xl border shadow-sm focus-within:ring-2 focus-within:ring-primary/50 transition-all ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-300'}`}>
+            
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleFileUpload} 
+              className="hidden" 
+              accept=".txt,.pdf"
+            />
+            
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isUploading}
+              title="Anexar documento (RAG)"
+              className={`p-3 m-1.5 rounded-xl transition-all flex-shrink-0 text-gray-500 hover:text-primary hover:bg-gray-100 dark:hover:bg-gray-700`}
+            >
+              {isUploading ? <Loader2 size={20} className="animate-spin" /> : <Paperclip size={20} />}
+            </button>
+
             <textarea
-              className="flex-1 max-h-48 min-h-[56px] p-4 bg-transparent resize-none outline-none scrollbar-hide text-sm md:text-base"
+              className="flex-1 max-h-48 min-h-[56px] p-4 pl-1 bg-transparent resize-none outline-none scrollbar-hide text-sm md:text-base text-inherit"
               placeholder="Digite sua mensagem para o Hota.chat..."
               value={inputMessage}
               onChange={(e) => setInputMessage(e.target.value)}
@@ -291,14 +468,14 @@ function App() {
               disabled={isLoading || !inputMessage.trim() || !currentChatId}
               className={`p-3 m-1.5 rounded-xl transition-all flex-shrink-0 flex items-center justify-center
                 ${!inputMessage.trim() || isLoading 
-                  ? 'bg-transparent text-gray-400' 
-                  : 'bg-primary text-white hover:bg-primary-hover shadow-md'}`}
+                  ? 'bg-transparent text-gray-405 cursor-not-allowed' 
+                  : 'bg-primary text-white hover:bg-primary/90 shadow-md'}`}
             >
               <Send size={20} />
             </button>
           </div>
           <p className="text-center text-xs text-gray-500 mt-3">
-            Hota.chat usa tecnologia da OpenAI. Ele pode cometer erros. Considere verificar informações importantes.
+            Hota.chat usa tecnologia da OpenAI e integração Google Workspace. Ele pode cometer erros.
           </p>
         </div>
       </div>
