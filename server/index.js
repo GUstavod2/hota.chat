@@ -57,6 +57,9 @@ function extractTextFromPdfBufferFallback(buffer) {
   return text.trim() || buffer.toString('utf-8');
 }
 
+// Google connection simulation state (stored in server memory)
+let isGoogleConnected = false;
+
 // ==========================================
 // ROTAS DE INTEGRAÇÃO GOOGLE (MOCK)
 // ==========================================
@@ -64,14 +67,15 @@ function extractTextFromPdfBufferFallback(buffer) {
 // Rota de status de conexão do Google
 app.get('/api/google/status', (req, res) => {
   res.json({
-    calendar: true,
-    gmail: true,
-    drive: true
+    calendar: isGoogleConnected,
+    gmail: isGoogleConnected,
+    drive: isGoogleConnected
   });
 });
 
 // Redirecionamento para Autenticação Google Simulada
 app.get('/api/google/auth', (req, res) => {
+  isGoogleConnected = true; // Ativa a conexão!
   res.send(`
     <html>
       <head>
@@ -96,6 +100,9 @@ app.get('/api/google/auth', (req, res) => {
 
 // Próximas Atividades (Calendar)
 app.get('/api/google/calendar/events', (req, res) => {
+  if (!isGoogleConnected) {
+    return res.json({ events: [] });
+  }
   res.json({
     events: [
       { id: "1", title: "Entrega: Trabalho de Inteligência Artificial (pgvector)", date: "Amanhã", time: "23:59", link: "https://calendar.google.com" },
@@ -107,6 +114,9 @@ app.get('/api/google/calendar/events', (req, res) => {
 
 // Avisos Recentes (Gmail)
 app.get('/api/google/gmail/messages', (req, res) => {
+  if (!isGoogleConnected) {
+    return res.json({ messages: [] });
+  }
   res.json({
     messages: [
       { id: "1", subject: "Alteração de sala da aula prática", sender: "Prof. Ricardo (Compiladores)", date: "14:32", snippet: "Prezados alunos, excepcionalmente hoje nossa aula prática ocorrerá na Sala 402 do Bloco C..." },
@@ -118,6 +128,9 @@ app.get('/api/google/gmail/messages', (req, res) => {
 
 // Arquivos Recentes (Drive)
 app.get('/api/google/drive/files', (req, res) => {
+  if (!isGoogleConnected) {
+    return res.json({ files: [] });
+  }
   res.json({
     files: [
       { id: "1", name: "Apostila_Redes_de_Computadores.pdf", mimeType: "application/pdf", lastModified: "Ontem", link: "https://drive.google.com" },

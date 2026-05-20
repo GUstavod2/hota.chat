@@ -62,7 +62,7 @@ function App() {
     }
   }, [theme]);
 
-  // Check Google Integration Status from Backend
+  // Check Google Integration Status from Backend (polling every 3 seconds for dynamic updates)
   useEffect(() => {
     const checkIntegrationStatus = async () => {
       try {
@@ -81,6 +81,8 @@ function App() {
       }
     };
     checkIntegrationStatus();
+    const interval = setInterval(checkIntegrationStatus, 3000);
+    return () => clearInterval(interval);
   }, []);
 
   // Scroll to bottom when messages change
@@ -326,6 +328,8 @@ function App() {
             href={import.meta.env.VITE_API_URL 
               ? `${import.meta.env.VITE_API_URL}/api/google/auth` 
               : 'http://localhost:3001/api/google/auth'}
+            target="_blank"
+            rel="noopener noreferrer"
             className="flex items-center justify-center gap-2 w-full py-2.5 px-4 rounded-xl text-xs font-semibold bg-primary text-white hover:bg-primary/90 hover:scale-[1.01] active:scale-[0.99] transition-all shadow-sm"
           >
             <svg className="w-4 h-4 fill-current flex-shrink-0" viewBox="0 0 24 24">
@@ -402,7 +406,7 @@ function App() {
                     Visão Geral Acadêmica
                   </h3>
                 </div>
-                <AcademicDashboard theme={theme} />
+                <AcademicDashboard theme={theme} integrations={googleIntegrations} />
               </div>
             </div>
           ) : (

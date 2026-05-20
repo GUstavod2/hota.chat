@@ -4,7 +4,7 @@ import ActivityCard from './ActivityCard';
 import GmailNoticeCard from './GmailNoticeCard';
 import DriveFileCard from './DriveFileCard';
 
-export default function AcademicDashboard({ theme }) {
+export default function AcademicDashboard({ theme, integrations = {} }) {
   const [calendar, setCalendar] = useState({ data: [], loading: true, error: null });
   const [gmail, setGmail] = useState({ data: [], loading: true, error: null });
   const [drive, setDrive] = useState({ data: [], loading: true, error: null });
@@ -16,6 +16,7 @@ export default function AcademicDashboard({ theme }) {
 
   useEffect(() => {
     const fetchCalendar = async () => {
+      setCalendar(prev => ({ ...prev, loading: true }));
       try {
         const response = await fetch(getApiUrl('/api/google/calendar/events'));
         if (!response.ok) throw new Error('Não foi possível obter os eventos.');
@@ -27,6 +28,7 @@ export default function AcademicDashboard({ theme }) {
     };
 
     const fetchGmail = async () => {
+      setGmail(prev => ({ ...prev, loading: true }));
       try {
         const response = await fetch(getApiUrl('/api/google/gmail/messages'));
         if (!response.ok) throw new Error('Não foi possível obter as mensagens.');
@@ -38,6 +40,7 @@ export default function AcademicDashboard({ theme }) {
     };
 
     const fetchDrive = async () => {
+      setDrive(prev => ({ ...prev, loading: true }));
       try {
         const response = await fetch(getApiUrl('/api/google/drive/files'));
         if (!response.ok) throw new Error('Não foi possível obter os arquivos.');
@@ -51,7 +54,7 @@ export default function AcademicDashboard({ theme }) {
     fetchCalendar();
     fetchGmail();
     fetchDrive();
-  }, []);
+  }, [integrations]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 w-full mt-6">
