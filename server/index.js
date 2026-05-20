@@ -3,8 +3,6 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const { OpenAI } = require('openai');
 const multer = require('multer');
-const pdfParse = require('pdf-parse');
-const { pool, initDB } = require('./db');
 
 // Load environment variables
 dotenv.config();
@@ -18,9 +16,6 @@ app.use(express.json());
 
 // Configura Multer para salvar os uploads em memória (ideal para Vercel Serverless)
 const upload = multer({ storage: multer.memoryStorage() });
-
-// Initialize DB and pgvector extension
-initDB();
 
 // Initialize OpenAI API
 const apiKey = process.env.OPENAI_API_KEY;
@@ -50,8 +45,91 @@ function chunkText(text, maxChunkSize = 1000) {
   return chunks;
 }
 
+// Fallback robusto para extrair texto de PDFs caso o pdf-parse dê erro de empacotamento na Vercel
+function extractTextFromPdfBufferFallback(buffer) {
+  const content = buffer.toString('binary');
+  const regex = /\(([^)]+)\)\s*(?:Tj|TJ)/g;
+  let match;
+  let text = '';
+  while ((match = regex.exec(content)) !== null) {
+    text += match[1] + ' ';
+  }
+  return text.trim() || buffer.toString('utf-8');
+}
+
 // ==========================================
-// ROTA 1: UPLOAD & INGESTÃO DE RAG
+// ROTAS DE INTEGRAÇÃO GOOGLE (MOCK)
+// ==========================================
+
+// Rota de status de conexão do Google
+app.get('/api/google/status', (req, res) => {
+  res.json({
+    calendar: true,
+    gmail: true,
+    drive: true
+  });
+});
+
+// Redirecionamento para Autenticação Google Simulada
+app.get('/api/google/auth', (req, res) => {
+  res.send(`
+    <html>
+      <head>
+        <title>Hota.chat - Conexão Google</title>
+        <meta charset="utf-8">
+      </head>
+      <body style="font-family: system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #202123; color: white; margin: 0; padding: 20px; text-align: center;">
+        <div style="background-color: #343541; padding: 40px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); max-width: 400px; border: 1px solid #4d4d4f;">
+          <div style="font-size: 48px; margin-bottom: 20px;">🎓</div>
+          <h1 style="color: #10a37f; margin: 0 0 10px 0; font-size: 24px;">Conta Google Conectada!</h1>
+          <p style="color: #c5c5d2; font-size: 14px; line-height: 1.6; margin-bottom: 30px;">
+            Sua conta acadêmica foi integrada com sucesso. O Hota.chat agora pode acessar seus prazos, avisos e arquivos do Drive.
+          </p>
+          <button onclick="window.close()" style="background-color: #10a37f; hover:background-color: #1a7f64; color: white; border: none; padding: 12px 24px; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 14px; width: 100%; transition: background 0.2s;">
+            Fechar Janela
+          </button>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
+// Próximas Atividades (Calendar)
+app.get('/api/google/calendar/events', (req, res) => {
+  res.json({
+    events: [
+      { id: "1", title: "Entrega: Trabalho de Inteligência Artificial (pgvector)", date: "Amanhã", time: "23:59", link: "https://calendar.google.com" },
+      { id: "2", title: "Prova Presencial: Engenharia de Software II", date: "22/05/2026", time: "08:00" },
+      { id: "3", title: "Apresentação: Pré-Banca de TCC", date: "26/05/2026", time: "14:00" }
+    ]
+  });
+});
+
+// Avisos Recentes (Gmail)
+app.get('/api/google/gmail/messages', (req, res) => {
+  res.json({
+    messages: [
+      { id: "1", subject: "Alteração de sala da aula prática", sender: "Prof. Ricardo (Compiladores)", date: "14:32", snippet: "Prezados alunos, excepcionalmente hoje nossa aula prática ocorrerá na Sala 402 do Bloco C..." },
+      { id: "2", subject: "Confirmação de inscrição no Simpósio", sender: "Portal de Eventos Acadêmicos", date: "Ontem", snippet: "Sua inscrição para o Simpósio de Computação Aplicada foi confirmada com sucesso. O credenciamento inicia às..." },
+      { id: "3", subject: "Nota da primeira prova disponibilizada", sender: "Sistema Acadêmico Siga", date: "18 de Mai", snippet: "A nota da primeira avaliação teórica de Algoritmos foi lançada no portal. A revisão de prova será na..." }
+    ]
+  });
+});
+
+// Arquivos Recentes (Drive)
+app.get('/api/google/drive/files', (req, res) => {
+  res.json({
+    files: [
+      { id: "1", name: "Apostila_Redes_de_Computadores.pdf", mimeType: "application/pdf", lastModified: "Ontem", link: "https://drive.google.com" },
+      { id: "2", name: "Resumo_Física_Estática.docx", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", lastModified: "12 de Mai", link: "https://drive.google.com" },
+      { id: "3", name: "Planilha_Notas_Calculo.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", lastModified: "08 de Mai", link: "https://drive.google.com" }
+    ]
+  });
+});
+
+
+// ==========================================
+// ROTA 3: UPLOAD & INGESTÃO DE RAG (LAZY LOADED)
 // ==========================================
 app.post('/api/upload', upload.single('file'), async (req, res) => {
   try {
@@ -64,16 +142,26 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
     let text = "";
     
-    // Passo 2: Extrair texto (suporta txt e pdf)
+    // Passo 2: Extrair texto (suporta txt e pdf) com lazy load e fallback
     if (req.file.mimetype === 'application/pdf') {
-      const pdfData = await pdfParse(req.file.buffer);
-      text = pdfData.text;
+      try {
+        const pdfParse = require('pdf-parse');
+        const pdfData = await pdfParse(req.file.buffer);
+        text = pdfData.text;
+      } catch (pdfErr) {
+        console.warn("pdf-parse failed on server, using fast fallback text extractor:", pdfErr);
+        text = extractTextFromPdfBufferFallback(req.file.buffer);
+      }
     } else {
       text = req.file.buffer.toString('utf-8');
     }
 
     // Passo 3: Dividir texto em chunks
     const chunks = chunkText(text, 1000);
+    
+    // Lazy load do Pool de Banco de dados
+    const { pool, initDB } = require('./db');
+    await initDB();
     
     const client = await pool.connect();
     
@@ -106,7 +194,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 
 
 // ==========================================
-// ROTA 2: CHAT & RECUPERAÇÃO RAG
+// ROTA 4: CHAT & RECUPERAÇÃO RAG (LAZY LOADED)
 // ==========================================
 app.post('/api/chat', async (req, res) => {
   try {
@@ -117,9 +205,12 @@ app.post('/api/chat', async (req, res) => {
 
     let contextText = "";
 
-    // Passo 6 e 7: Buscar no banco vetorial (se configurado)
+    // Passo 6 e 7: Buscar no banco vetorial (se configurado) com lazy load
     if (process.env.DATABASE_URL) {
       try {
+        const { pool, initDB } = require('./db');
+        await initDB();
+
         // Gera embedding da pergunta do usuário
         const questionEmbeddingRes = await openai.embeddings.create({
           model: "text-embedding-3-small",
@@ -154,7 +245,7 @@ app.post('/api/chat', async (req, res) => {
     // Passo 8: Montar prompt combinando o contexto + a pergunta
     let systemMessage = {
       role: 'system',
-      content: 'Você é o Hota.chat, um assistente inteligente. Responda de forma clara.'
+      content: 'Você é o Hota.chat, um assistente acadêmico inteligente. Ajude os estudantes a organizar rotinas, resumir e tirar dúvidas das matérias de forma clara.'
     };
 
     if (contextText) {
